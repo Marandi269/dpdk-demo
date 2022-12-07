@@ -153,6 +153,73 @@ static struct rte_mbuf *send_icmp(struct rte_mempool *mbuf_pool, uint8_t *dst_ma
 
 }
 
+
+static int encode_udp_pkt(uint8_t *msg, unsigned char *data, uint16_t total_len, Dpdk dpdk) {
+
+    // encode
+
+    // 1 ethhdr
+    struct rte_ether_hdr *eth = (struct rte_ether_hdr *)msg;
+    rte_memcpy(eth->s_addr.addr_bytes, dpdk.gDstMac, RTE_ETHER_ADDR_LEN);
+    rte_memcpy(eth->d_addr.addr_bytes, dpdk.gDstMac, RTE_ETHER_ADDR_LEN);
+    eth->ether_type = htons(RTE_ETHER_TYPE_IPV4);
+
+
+    // 2 iphdr
+    struct rte_ipv4_hdr *ip = (struct rte_ipv4_hdr *)(msg + sizeof(struct rte_ether_hdr));
+    ip->version_ihl = 0x45;
+    ip->type_of_service = 0;
+    ip->total_length = htons(total_len - sizeof(struct rte_ether_hdr));
+    ip->packet_id = 0;
+    ip->fragment_offset = 0;
+    ip->time_to_live = 64; // ttl = 64
+    ip->next_proto_id = IPPROTO_UDP;
+    ip->src_addr = dpdk.ip;
+    ip->dst_addr = dpdk.dstIp;
+
+    ip->hdr_checksum = 0;
+    ip->hdr_checksum = rte_ipv4_cksum(ip);
+
+    // 3 udphdr
+
+    struct rte_udp_hdr *udp = (struct rte_udp_hdr *)(msg + sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr));
+    udp->src_port = dpdk.port;
+    udp->dst_port = dpdk.dstPort;
+    uint16_t udplen = total_len - sizeof(struct rte_ether_hdr) - sizeof(struct rte_ipv4_hdr);
+    udp->dgram_len = htons(udplen);
+
+    rte_memcpy((uint8_t*)(udp+1), data, udplen);
+
+    udp->dgram_cksum = 0;
+    udp->dgram_cksum = rte_ipv4_udptcp_cksum(ip, udp);
+
+    struct in_addr addr;
+    addr.s_addr = dpdk.ip;
+    printf(" --> src: %s:%d, ", inet_ntoa(addr), ntohs(dpdk.port));
+
+    addr.s_addr = dpdk.dstIp;
+    printf("dst: %s:%d\n", inet_ntoa(addr), ntohs(dpdk.dstPort));
+
+    return 0;
+}
+
+
+static struct rte_mbuf *send_udp(Dpdk dpdk, uint8_t *data, uint16_t length) {
+    // mempool --> mbuf
+    const unsigned total_len = length + 42;
+
+    struct rte_mbuf *mbuf = rte_pktmbuf_alloc(dpdk.mbuf_pool);
+    if (!mbuf) {
+        rte_exit(EXIT_FAILURE, "rte_pktmbuf_alloc\n");
+    }
+    mbuf->pkt_len = total_len;
+    mbuf->data_len = total_len;
+
+    uint8_t *pktdata = rte_pktmbuf_mtod(mbuf, uint8_t*);
+    encode_udp_pkt(pktdata, data, total_len, dpdk);
+    return mbuf;
+}
+
 void ipv4_process(rte_ether_hdr *ehdr, struct rte_mbuf *pBuf, Dpdk dpdk){
     struct rte_ipv4_hdr *iphdr =  rte_pktmbuf_mtod_offset(pBuf, struct rte_ipv4_hdr *,sizeof(struct rte_ether_hdr));
     if(iphdr->next_proto_id == IPPROTO_ICMP){
@@ -202,10 +269,9 @@ void ipv4_process(rte_ether_hdr *ehdr, struct rte_mbuf *pBuf, Dpdk dpdk){
                 (char *)(udphdr+1));
 
 
-        // struct rte_mbuf *txbuf = ng_send_udp(mbuf_pool, (uint8_t *)(udphdr+1), length);
-        // rte_eth_tx_burst(gDpdkPortId, 0, &txbuf, 1);
-        // rte_pktmbuf_free(txbuf);
-
+        struct rte_mbuf *txbuf = send_udp(dpdk, (uint8_t *)(udphdr+1), length);
+        rte_eth_tx_burst(dpdk.portId, 0, &txbuf, 1);
+        rte_pktmbuf_free(txbuf);
 
         return;
     }
