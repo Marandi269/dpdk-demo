@@ -1,0 +1,22 @@
+#!/usr/bin/bpftrace
+
+#include <net/udp.h>
+#include <net/udplite.h>
+#include <net/protocol.h>
+#include <net/inet_common.h>
+
+kprobe:udp_recvmsg
+{
+    $sk = (struct sock *)arg0;
+    $msg = (struct msghdr *)arg1;
+    $len = arg2;
+    $flags =  arg3;
+    $addr_len = arg4;
+    if($sk->__sk_common.skc_num==8000){
+        printf("udp_recvmsg:\n");
+        printf("\t skc_dportort->%d skc_num->%d msg.len = %ld\n", 
+            $sk->__sk_common.skc_dport, 
+            $sk->__sk_common.skc_num, 
+            $len);
+    }
+}

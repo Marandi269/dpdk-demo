@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "atomic": "cpp",
+        "chrono": "cpp",
+        "cstdint": "cpp",
+        "stop_token": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "vector": "cpp",
+        "string_view": "cpp",
+        "iostream": "cpp",
+        "mutex": "cpp",
+        "condition_variable": "cpp"
+    }
+}
